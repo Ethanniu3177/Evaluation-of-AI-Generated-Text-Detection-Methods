@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 from pathlib import Path
 from typing import Optional, List
 
@@ -24,6 +25,9 @@ FINAL_COLUMNS = [
 ]
 
 
+# -----------------------------
+# basic utilities
+# -----------------------------
 def info(msg: str) -> None:
     print(f"[INFO] {msg}")
 
@@ -32,14 +36,10 @@ def warn(msg: str) -> None:
     print(f"[WARN] {msg}")
 
 
-def ensure_output_dirs(base_dir: str = "data") -> tuple[Path, Path]:
-    base = Path(base_dir)
-    processed = base / "processed"
-    base.mkdir(parents=True, exist_ok=True)
-    processed.mkdir(parents=True, exist_ok=True)
-    info(f"Using base data directory: {base.resolve()}")
-    info(f"Using processed directory: {processed.resolve()}")
-    return base, processed
+def clean_text(text: object) -> str:
+    if text is None:
+        return ""
+    return " ".join(str(text).split()).strip()
 
 
 def normalize_nullable_value(x):
@@ -60,6 +60,26 @@ def normalize_lower_string(x):
     return s
 
 
+def maybe_sample(df: pd.DataFrame, max_rows: Optional[int], seed: int) -> pd.DataFrame:
+    if max_rows is None or len(df) <= max_rows:
+        return df.reset_index(drop=True)
+    info(f"Sampling {max_rows:,} rows from {len(df):,} rows")
+    return df.sample(n=max_rows, random_state=seed).reset_index(drop=True)
+
+
+def ensure_output_dirs(base_dir: str = "data") -> tuple[Path, Path]:
+    base = Path(base_dir)
+    processed = base / "processed"
+    base.mkdir(parents=True, exist_ok=True)
+    processed.mkdir(parents=True, exist_ok=True)
+    info(f"Using base data directory: {base.resolve()}")
+    info(f"Using processed directory: {processed.resolve()}")
+    return base, processed
+
+
+# -----------------------------
+# RAID load + processing
+# -----------------------------
 def load_raid_dataframe(split: str = "train", base_dir: str = "data") -> pd.DataFrame:
     """
     Prefer local cached CSV under data/<split>.csv.
@@ -113,12 +133,6 @@ def load_raid_dataframe(split: str = "train", base_dir: str = "data") -> pd.Data
         )
 
 
-def clean_text(text: object) -> str:
-    if text is None:
-        return ""
-    return " ".join(str(text).split()).strip()
-
-
 def validate_raid_columns(df: pd.DataFrame) -> None:
     required = ["id", "generation", "attack", "domain"]
     missing = [c for c in required if c not in df.columns]
@@ -143,13 +157,11 @@ def validate_raid_columns(df: pd.DataFrame) -> None:
 
     df["model"] = df["model"].apply(normalize_nullable_value)
     df["model"] = df["model"].apply(lambda x: x.lower() if isinstance(x, str) else x)
-
     df["label"] = df["label"].apply(normalize_lower_string)
     df["attack"] = df["attack"].apply(lambda x: "" if pd.isna(x) else str(x).strip().lower())
     df["domain"] = df["domain"].apply(lambda x: "" if pd.isna(x) else str(x).strip())
 
     info("RAID column validation complete")
-    info(f"Columns available: {list(df.columns)}")
 
 
 def print_debug_value_counts(df: pd.DataFrame, debug: bool = False) -> None:
@@ -157,17 +169,11 @@ def print_debug_value_counts(df: pd.DataFrame, debug: bool = False) -> None:
         return
 
     info("Debugging RAID label / attack / model values...")
-
     print("\n[label value counts]")
     print(df["label"].astype(str).value_counts(dropna=False).head(20))
-
     print("\n[attack value counts]")
     print(df["attack"].astype(str).value_counts(dropna=False).head(20))
-
-    print("\n[model null count]")
-    print(df["model"].isna().sum())
-
-    print("\n[model sample values]")
+    print("\n[model value counts]")
     print(df["model"].astype(str).value_counts(dropna=False).head(20))
 
 
@@ -210,87 +216,96 @@ def standardize_raid_subset(
     out["variant"] = variant
     out["source_dataset"] = "RAID"
     out["generator_model"] = df["model"].apply(lambda x: "" if x is None else str(x))
-
-    if variant == "paraphrased_ai":
-        out["attack_type"] = df["attack"].apply(lambda x: "" if x in {"", "none"} else str(x))
-    else:
-        out["attack_type"] = ""
-
+    out["attack_type"] = df["attack"].apply(lambda x: "" if x in {"", "none"} else str(x))
     out["domain"] = df["domain"].fillna("")
     out["group_id"] = df.apply(build_group_id, axis=1)
     out["split"] = split
     out["metadata"] = df.apply(build_metadata_from_raid, axis=1)
-
     out = out[FINAL_COLUMNS].copy()
     out = out[out["text"].str.strip() != ""].reset_index(drop=True)
     return out
 
 
 def get_plain_human(raid_df: pd.DataFrame, split: str) -> pd.DataFrame:
-    info("Building plain_human subset...")
-
-    subset = raid_df[
-        (raid_df["model"] == "human") &
-        (raid_df["attack"] == "none")
-    ].copy()
-
+    subset = raid_df[(raid_df["model"] == "human") & (raid_df["attack"] == "none")].copy()
     info(f"plain_human raw rows found: {len(subset):,}")
     return standardize_raid_subset(subset, label="human", variant="plain_human", split=split)
 
 
 def get_plain_ai(raid_df: pd.DataFrame, split: str) -> pd.DataFrame:
-    info("Building plain_ai subset...")
-
-    subset = raid_df[
-        (raid_df["model"] != "human") &
-        (raid_df["attack"] == "none")
-    ].copy()
-
+    subset = raid_df[(raid_df["model"] != "human") & (raid_df["attack"] == "none")].copy()
     info(f"plain_ai raw rows found: {len(subset):,}")
     return standardize_raid_subset(subset, label="ai", variant="plain_ai", split=split)
 
 
 def get_paraphrased_ai(raid_df: pd.DataFrame, split: str) -> pd.DataFrame:
-    info("Building paraphrased_ai subset...")
-
-    subset = raid_df[
-        (raid_df["model"] != "human") &
-        (raid_df["attack"] == "paraphrase")
-    ].copy()
-
+    subset = raid_df[(raid_df["model"] != "human") & (raid_df["attack"] == "paraphrase")].copy()
     info(f"paraphrased_ai raw rows found: {len(subset):,}")
     return standardize_raid_subset(subset, label="ai", variant="paraphrased_ai", split=split)
 
 
-def maybe_sample(df: pd.DataFrame, max_rows: Optional[int], seed: int) -> pd.DataFrame:
-    if max_rows is None or len(df) <= max_rows:
-        return df.reset_index(drop=True)
-    info(f"Sampling {max_rows:,} rows from {len(df):,} rows")
-    return df.sample(n=max_rows, random_state=seed).reset_index(drop=True)
+def save_csv(df: pd.DataFrame, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    info(f"Saving CSV to {path} ...")
+    df.to_csv(path, index=False)
+    info(f"Saved {len(df):,} rows to {path}")
 
 
+def save_jsonl(df: pd.DataFrame, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    info(f"Saving JSONL to {path} ...")
+    with path.open("w", encoding="utf-8") as f:
+        for _, row in df.iterrows():
+            f.write(json.dumps(row.to_dict(), ensure_ascii=False) + "\n")
+    info(f"Saved {len(df):,} rows to {path}")
+
+
+def process_raid(split: str, base_dir: str, seed: int, max_rows_per_raid_subset: Optional[int], debug: bool) -> None:
+    base_dir_path, processed_dir = ensure_output_dirs(base_dir)
+    info("Starting RAID load step...")
+    raid_df = load_raid_dataframe(split=split, base_dir=str(base_dir_path))
+    validate_raid_columns(raid_df)
+    print_debug_value_counts(raid_df, debug=debug)
+    info(f"Total RAID rows loaded: {len(raid_df):,}")
+
+    plain_human_df = maybe_sample(get_plain_human(raid_df, split), max_rows_per_raid_subset, seed)
+    plain_ai_df = maybe_sample(get_plain_ai(raid_df, split), max_rows_per_raid_subset, seed)
+    paraphrased_ai_df = maybe_sample(get_paraphrased_ai(raid_df, split), max_rows_per_raid_subset, seed)
+
+    save_csv(plain_human_df, processed_dir / "plain_human.csv")
+    save_csv(plain_ai_df, processed_dir / "plain_ai.csv")
+    save_csv(paraphrased_ai_df, processed_dir / "paraphrased_ai.csv")
+
+    all_df = pd.concat([plain_human_df, plain_ai_df, paraphrased_ai_df], ignore_index=True)
+    save_csv(all_df, processed_dir / "all_raid.csv")
+    save_jsonl(all_df, processed_dir / "all_raid.jsonl")
+    info("RAID processing complete")
+
+
+# -----------------------------
+# MarkLLM watermark generation
+# -----------------------------
 def build_markllm_generator(
     algorithm_name: str = "KGW",
     model_name: str = "facebook/opt-1.3b",
-    max_new_tokens: int = 200,
+    max_new_tokens: int = 160,
 ):
-    """
-    Build MarkLLM watermark generator.
-    """
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
-
     from markllm.watermark.auto_watermark import AutoWatermark
     from markllm.utils.transformers_config import TransformersConfig
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     info(f"Loading watermark model {model_name} on {device}...")
 
-    model = AutoModelForCausalLM.from_pretrained(model_name).to(device)
     tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForCausalLM.from_pretrained(model_name)
 
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
+    model.config.pad_token_id = tokenizer.pad_token_id
+    model = model.to(device)
+    model.eval()
 
     tf_config = TransformersConfig(
         model=model,
@@ -309,12 +324,65 @@ def build_markllm_generator(
     return watermark
 
 
+def build_generation_prompt(raw_prompt: str, prompt_mode: str) -> str:
+    prompt = clean_text(raw_prompt)
+    if prompt_mode == "raw":
+        return prompt
+    if prompt_mode == "chat":
+        return (
+            "You are a helpful assistant. Answer the following prompt with a standalone response. "
+            "Do not repeat the prompt text.\n\n"
+            f"Prompt: {prompt}\n\n"
+            "Response:"
+        )
+    raise ValueError(f"Unsupported prompt_mode: {prompt_mode}")
+
+
+COPIED_PREFIX_MARKERS = [
+    "prompt:",
+    "response:",
+    "answer:",
+]
+
+
+def strip_prompt_echo(full_text: str, used_prompt: str) -> str:
+    text = clean_text(full_text)
+    prompt = clean_text(used_prompt)
+    if not text:
+        return ""
+
+    if prompt and text.startswith(prompt):
+        text = text[len(prompt):].strip()
+
+    lowered = text.lower()
+    for marker in COPIED_PREFIX_MARKERS:
+        if lowered.startswith(marker):
+            text = text[len(marker):].strip()
+            lowered = text.lower()
+
+    return clean_text(text)
+
+
+MIN_ACCEPTABLE_WORDS = 8
+
+
+def looks_bad_generation(text: str) -> bool:
+    words = text.split()
+    if len(words) < MIN_ACCEPTABLE_WORDS:
+        return True
+    if text.lower().startswith("prompt:"):
+        return True
+    return False
+
+
 def standardize_watermarked_rows(
     source_rows: pd.DataFrame,
     generated_texts: List[str],
     *,
     generator_model_name: str,
     split: str,
+    watermark_algorithm: str,
+    prompt_mode: str,
 ) -> pd.DataFrame:
     if len(source_rows) != len(generated_texts):
         raise ValueError("source_rows and generated_texts must have the same length")
@@ -337,6 +405,8 @@ def standardize_watermarked_rows(
             "parent_id": row["id"],
             "parent_variant": row["variant"],
             "watermark_source_dataset": "MarkLLM",
+            "watermark_algorithm": watermark_algorithm,
+            "prompt_mode": prompt_mode,
         }, ensure_ascii=False))
     out["metadata"] = md_list
 
@@ -346,153 +416,179 @@ def standardize_watermarked_rows(
 
 
 def generate_watermarked_ai(
-    standardized_df: pd.DataFrame,
     raid_df_full: pd.DataFrame,
     watermark,
     *,
     split: str,
     watermark_model_name: str,
-    max_rows: Optional[int],
+    watermark_algorithm: str,
+    prompt_mode: str,
+    max_rows: int,
     seed: int,
 ) -> pd.DataFrame:
-    """
-    Generate watermarked AI from RAID prompts.
-    We match standardized rows back to RAID by id, then use RAID prompt.
-    """
-    info("Preparing rows for watermark generation...")
+    info("Preparing RAID rows for watermark generation...")
 
-    raid_lookup = raid_df_full.set_index(raid_df_full["id"].astype(str), drop=False)
+    source_df = raid_df_full[(raid_df_full["prompt"].notna()) & (raid_df_full["prompt"].astype(str).str.strip() != "")].copy()
 
-    rows_for_generation = []
+    # Prefer non-human rows with attack=none to match your AI generation setting.
+    preferred = source_df[(source_df["model"] != "human") & (source_df["attack"] == "none")].copy()
+    if len(preferred) >= max_rows:
+        source_df = preferred
+    else:
+        source_df = preferred if len(preferred) > 0 else source_df
 
-    for _, row in standardized_df.iterrows():
-        rid = str(row["id"])
-        if rid not in raid_lookup.index:
-            continue
-        raid_row = raid_lookup.loc[rid]
-        prompt = raid_row.get("prompt")
-        if pd.isna(prompt) or str(prompt).strip() == "":
-            continue
-        rows_for_generation.append(row)
+    source_df = maybe_sample(source_df, max_rows=max_rows, seed=seed).reset_index(drop=True)
+    info(f"Rows selected for watermark generation: {len(source_df):,}")
 
-    if not rows_for_generation:
-        warn("No rows with non-empty prompts were found for watermark generation")
-        return pd.DataFrame(columns=FINAL_COLUMNS)
+    standardized_source = standardize_raid_subset(
+        source_df,
+        label="ai",
+        variant="plain_ai_prompt_source",
+        split=split,
+    )
 
-    source_rows = pd.DataFrame(rows_for_generation)
-    info(f"Rows with usable prompts before sampling: {len(source_rows):,}")
-    source_rows = maybe_sample(source_rows, max_rows=max_rows, seed=seed).reset_index(drop=True)
-    info(f"Rows selected for watermark generation: {len(source_rows):,}")
+    prompt_map = {str(row["id"]): str(row["prompt"]).strip() for _, row in source_df.iterrows()}
 
-    sampled_prompts = []
-    for _, row in source_rows.iterrows():
-        raid_row = raid_lookup.loc[str(row["id"])]
-        sampled_prompts.append(str(raid_row["prompt"]).strip())
+    generated_texts: List[str] = []
+    total = len(standardized_source)
+    for i, (_, row) in enumerate(standardized_source.iterrows(), start=1):
+        row_id = str(row["id"])
+        raw_prompt = prompt_map[row_id]
+        used_prompt = build_generation_prompt(raw_prompt, prompt_mode=prompt_mode)
 
-    generated_texts = []
-    total = len(sampled_prompts)
-    info(f"Generating watermarked_ai for {total:,} rows...")
+        full_output = watermark.generate_watermarked_text(used_prompt)
+        cleaned_output = strip_prompt_echo(full_output, used_prompt)
 
-    for i, prompt in enumerate(sampled_prompts, start=1):
-        wm_text = watermark.generate_watermarked_text(prompt)
-        generated_texts.append(wm_text)
+        if looks_bad_generation(cleaned_output) and prompt_mode == "chat":
+            fallback_output = watermark.generate_watermarked_text(raw_prompt)
+            cleaned_output = strip_prompt_echo(fallback_output, raw_prompt)
+
+        generated_texts.append(cleaned_output)
 
         if i == 1 or i % 10 == 0 or i == total:
             info(f"Watermarked generation progress: {i:,}/{total:,}")
 
-    return standardize_watermarked_rows(
-        source_rows,
+    result = standardize_watermarked_rows(
+        standardized_source,
         generated_texts,
         generator_model_name=watermark_model_name,
         split=split,
+        watermark_algorithm=watermark_algorithm,
+        prompt_mode=prompt_mode,
+    )
+
+    return result
+
+
+# -----------------------------
+# command handlers
+# -----------------------------
+def cmd_download_raid(args) -> None:
+    base_dir, _ = ensure_output_dirs(args.base_dir)
+    df = load_raid_dataframe(split=args.split, base_dir=str(base_dir))
+    validate_raid_columns(df)
+    info(f"RAID download/cache ready: {len(df):,} rows")
+
+
+def cmd_process_raid(args) -> None:
+    process_raid(
+        split=args.split,
+        base_dir=args.base_dir,
+        seed=args.seed,
+        max_rows_per_raid_subset=args.max_rows_per_raid_subset,
+        debug=args.debug,
     )
 
 
-def save_csv(df: pd.DataFrame, path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    info(f"Saving CSV to {path} ...")
-    df.to_csv(path, index=False)
-    info(f"Saved {len(df):,} rows to {path}")
-
-
-def save_jsonl(df: pd.DataFrame, path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    info(f"Saving JSONL to {path} ...")
-    with path.open("w", encoding="utf-8") as f:
-        for _, row in df.iterrows():
-            f.write(json.dumps(row.to_dict(), ensure_ascii=False) + "\n")
-    info(f"Saved {len(df):,} rows to {path}")
-
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--split", type=str, default="train")
-    parser.add_argument("--base-dir", type=str, default="data")
-    parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--max-rows-per-raid-subset", type=int, default=None)
-    # parser.add_argument("--generate-watermarks", action="store_true")
-    # parser.add_argument("--max-watermark-rows", type=int, default=100)
-    # parser.add_argument("--watermark-algorithm", type=str, default="KGW")
-    # parser.add_argument("--watermark-model", type=str, default="facebook/opt-1.3b")
-    parser.add_argument("--max-new-tokens", type=int, default=200)
-    parser.add_argument("--debug", action="store_true")
-    args = parser.parse_args()
-
+def cmd_watermark(args) -> None:
     base_dir, processed_dir = ensure_output_dirs(args.base_dir)
 
-    info("Starting RAID load step...")
     raid_df = load_raid_dataframe(split=args.split, base_dir=str(base_dir))
     validate_raid_columns(raid_df)
-    print_debug_value_counts(raid_df, debug=args.debug)
-    info(f"Total RAID rows loaded: {len(raid_df):,}")
 
-    plain_human_df = maybe_sample(get_plain_human(raid_df, args.split), args.max_rows_per_raid_subset, args.seed)
-    plain_ai_df = maybe_sample(get_plain_ai(raid_df, args.split), args.max_rows_per_raid_subset, args.seed)
-    paraphrased_ai_df = maybe_sample(get_paraphrased_ai(raid_df, args.split), args.max_rows_per_raid_subset, args.seed)
+    watermark = build_markllm_generator(
+        algorithm_name=args.watermark_algorithm,
+        model_name=args.watermark_model,
+        max_new_tokens=args.max_new_tokens,
+    )
 
-    save_csv(plain_human_df, processed_dir / "plain_human.csv")
-    save_csv(plain_ai_df, processed_dir / "plain_ai.csv")
-    save_csv(paraphrased_ai_df, processed_dir / "paraphrased_ai.csv")
+    watermark_df = generate_watermarked_ai(
+        raid_df,
+        watermark,
+        split=args.split,
+        watermark_model_name=args.watermark_model,
+        watermark_algorithm=args.watermark_algorithm,
+        prompt_mode=args.prompt_mode,
+        max_rows=args.max_watermark_rows,
+        seed=args.seed,
+    )
 
-    # watermark_df = pd.DataFrame(columns=FINAL_COLUMNS)
+    out_name = f"watermarked_ai_{args.max_watermark_rows}.csv"
+    save_csv(watermark_df, processed_dir / out_name)
+    save_jsonl(watermark_df, processed_dir / out_name.replace(".csv", ".jsonl"))
+    info("Watermark generation complete")
 
-    # if args.generate_watermarks:
-    #     info("Beginning watermark generation setup...")
-    #     watermark = build_markllm_generator(
-    #         algorithm_name=args.watermark_algorithm,
-    #         model_name=args.watermark_model,
-    #         max_new_tokens=args.max_new_tokens,
-    #     )
 
-    #     source_for_watermark = pd.concat(
-    #         [plain_human_df, plain_ai_df, paraphrased_ai_df],
-    #         ignore_index=True
-    #     )
+def cmd_all(args) -> None:
+    process_raid(
+        split=args.split,
+        base_dir=args.base_dir,
+        seed=args.seed,
+        max_rows_per_raid_subset=args.max_rows_per_raid_subset,
+        debug=args.debug,
+    )
+    cmd_watermark(args)
 
-    #     watermark_df = generate_watermarked_ai(
-    #         source_for_watermark,
-    #         raid_df,
-    #         watermark,
-    #         split=args.split,
-    #         watermark_model_name=args.watermark_model,
-    #         max_rows=args.max_watermark_rows,
-    #         seed=args.seed,
-    #     )
 
-    #     save_csv(watermark_df, processed_dir / "watermarked_ai.csv")
-    # else:
-    #     info("Skipping watermarked_ai generation. Add --generate-watermarks to enable it.")
+# -----------------------------
+# CLI
+# -----------------------------
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Prepare RAID subsets and generate MarkLLM watermarked text.")
+    subparsers = parser.add_subparsers(dest="command", required=True)
 
-    # all_df = pd.concat(
-    #     [plain_human_df, plain_ai_df, paraphrased_ai_df, watermark_df],
-    #     ignore_index=True
-    # )
+    def add_common_arguments(p: argparse.ArgumentParser) -> None:
+        p.add_argument("--split", type=str, default="train")
+        p.add_argument("--base-dir", type=str, default="data")
+        p.add_argument("--seed", type=int, default=42)
+        p.add_argument("--debug", action="store_true")
 
-    # save_csv(all_df, processed_dir / "all_data.csv")
-    # save_jsonl(all_df, processed_dir / "all_data.jsonl")
+    p_download = subparsers.add_parser("download_raid", help="Download/cache RAID only.")
+    add_common_arguments(p_download)
+    p_download.set_defaults(func=cmd_download_raid)
 
-    # info("Done.")
-    # info(f"Files are saved under: {processed_dir.resolve()}")
+    p_process = subparsers.add_parser("process_raid", help="Build plain_human/plain_ai/paraphrased_ai from cached RAID.")
+    add_common_arguments(p_process)
+    p_process.add_argument("--max-rows-per-raid-subset", type=int, default=None)
+    p_process.set_defaults(func=cmd_process_raid)
+
+    p_watermark = subparsers.add_parser("watermark", help="Generate watermarked text from cached RAID prompts.")
+    add_common_arguments(p_watermark)
+    p_watermark.add_argument("--max-watermark-rows", type=int, default=100)
+    p_watermark.add_argument("--watermark-algorithm", type=str, default="KGW")
+    p_watermark.add_argument("--watermark-model", type=str, default="facebook/opt-1.3b")
+    p_watermark.add_argument("--max-new-tokens", type=int, default=160)
+    p_watermark.add_argument("--prompt-mode", choices=["raw", "chat"], default="chat")
+    p_watermark.set_defaults(func=cmd_watermark)
+
+    p_all = subparsers.add_parser("all", help="Process RAID and then generate watermarked text.")
+    add_common_arguments(p_all)
+    p_all.add_argument("--max-rows-per-raid-subset", type=int, default=None)
+    p_all.add_argument("--max-watermark-rows", type=int, default=100)
+    p_all.add_argument("--watermark-algorithm", type=str, default="KGW")
+    p_all.add_argument("--watermark-model", type=str, default="facebook/opt-1.3b")
+    p_all.add_argument("--max-new-tokens", type=int, default=160)
+    p_all.add_argument("--prompt-mode", choices=["raw", "chat"], default="chat")
+    p_all.set_defaults(func=cmd_all)
+
+    return parser
+
+
+def main() -> None:
+    parser = build_parser()
+    args = parser.parse_args()
+    random.seed(args.seed)
+    args.func(args)
 
 
 if __name__ == "__main__":

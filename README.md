@@ -3,7 +3,7 @@ CSCI 544 course project on evaluating the robustness of AI-generated text detect
 
 
 # Dataset Preparation Guide
-install dependencies using `pip install -r requirements.txt` and run `python build_datasets.py` to prepare the project datasets.
+Install dependencies using `pip install -r requirements.txt`, then run `python build_datasets.py all --max-watermark-rows <N>` to prepare the project datasets, where `<N>` controls how many watermarked sentences are generated.
 
 `build_datasets.py` is the dataset preparation pipeline for this project.
 
@@ -27,4 +27,6 @@ It does the following:
    - `plain_human`
    - `plain_ai`
    - `paraphrased_ai`
+   - `watermarked_ai`
+
 
