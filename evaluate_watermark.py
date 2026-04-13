@@ -3,17 +3,32 @@ import pandas as pd
 import numpy as np
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
 import json
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
+from markllm.watermark.auto_watermark import AutoWatermark
+from markllm.utils.transformers_config import TransformersConfig
 
-# Load model
+
 model_name = "facebook/opt-125m"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
-model = AutoModelForCausalLM.from_pretrained(model_name)
-model.eval()
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model.to(device)
+model = AutoModelForCausalLM.from_pretrained(
+    model_name,
+    torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+)
+device = "cuda" if torch.cuda.is_available() else "cpu"
 
+tf_config = TransformersConfig(
+    model=model,
+    tokenizer=tokenizer,
+    vocab_size=tokenizer.vocab_size,
+    device=device,
+)
+
+watermark = AutoWatermark.load(
+    "KGW", # type: ignore[arg-type]
+    algorithm_config="kgw_config.json",  # or dict (recommended)
+    transformers_config=tf_config,
+)
 
 def detect_watermark(text, seed=42, gamma=0.5):
     """
@@ -68,6 +83,9 @@ def detect_watermark(text, seed=42, gamma=0.5):
     prob = 1 / (1 + np.exp(-z))
     return prob
 
+def detect_with_markllm(text):
+    result = watermark.score_text(text)
+    return result["z_score"]
 
 def main():
     parser = argparse.ArgumentParser(
@@ -133,7 +151,11 @@ def main():
             df["text"] = df["text"].fillna("")
 
         print("Running watermark detector...")
-        y_score = np.array([detect_watermark(t) for t in df["text"]], dtype=float)
+
+        y_score = np.array(
+            [detect_with_markllm(t) for t in df["text"]],
+            dtype=float
+        )
 
     y_true = df["y_true"].to_numpy(dtype=int)
 
