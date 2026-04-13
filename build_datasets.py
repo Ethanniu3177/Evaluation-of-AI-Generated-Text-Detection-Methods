@@ -287,7 +287,7 @@ def process_raid(split: str, base_dir: str, seed: int, max_rows_per_raid_subset:
 # -----------------------------
 def build_markllm_generator(
     algorithm_name: str = "KGW",
-    model_name: str = "facebook/opt-1.3b",
+    model_name: str = "facebook/opt-125m",
     max_new_tokens: int = 160,
 ):
     import torch
