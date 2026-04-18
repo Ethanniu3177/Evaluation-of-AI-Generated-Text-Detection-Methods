@@ -9,6 +9,8 @@ from typing import Optional, List
 
 import pandas as pd
 
+random.seed(42)
+
 
 FINAL_COLUMNS = [
     "id",
@@ -92,12 +94,9 @@ def load_raid_dataframe(split: str = "train", base_dir: str = "data") -> pd.Data
     if local_csv.exists():
         info(f"Found local cached RAID file: {local_csv}")
         info("Loading RAID from local CSV...")
-        df = pd.read_csv(local_csv, chunksize=100_000)
 
-        df = pd.concat(
-            chunk.sample(frac=0.01, random_state=42)
-            for chunk in df
-        )
+        df = pd.read_csv(local_csv, skiprows=lambda i: i > 0 and random.random() > 0.01)
+
         info(f"Loaded local RAID CSV with {len(df):,} rows")
         return df
 
