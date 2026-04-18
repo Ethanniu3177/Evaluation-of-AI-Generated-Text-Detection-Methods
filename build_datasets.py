@@ -92,7 +92,12 @@ def load_raid_dataframe(split: str = "train", base_dir: str = "data") -> pd.Data
     if local_csv.exists():
         info(f"Found local cached RAID file: {local_csv}")
         info("Loading RAID from local CSV...")
-        df = pd.read_csv(local_csv)
+        df = pd.read_csv(local_csv, chunksize=100_000)
+
+        df = pd.concat(
+            chunk.sample(frac=0.01, random_state=42)
+            for chunk in df
+        )
         info(f"Loaded local RAID CSV with {len(df):,} rows")
         return df
 
@@ -101,7 +106,7 @@ def load_raid_dataframe(split: str = "train", base_dir: str = "data") -> pd.Data
 
         info("Local RAID CSV not found.")
         info("Loading RAID with raid-bench (this may download a large file)...")
-        df = load_data(split=split)
+        df = load_data(split=split) # type: ignore
         if not isinstance(df, pd.DataFrame):
             df = pd.DataFrame(df)
 

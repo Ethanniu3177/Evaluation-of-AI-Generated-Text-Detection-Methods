@@ -1,11 +1,10 @@
 {
   "algorithm_name": "KGW",
-  "f_scheme": "simple_1",
+  "f_scheme": "time",
   "gamma": 0.5,
   "delta": 2.0,
-  "window_scheme": "fixed",
+  "window_scheme": "left",
   "window_size": 50,
-  "seeding_scheme": "simple_1",
   "hash_key": 15485863,
   "z_threshold": 4.0,
   "prefix_length": 1

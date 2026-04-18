@@ -8,7 +8,7 @@ import torch
 from markllm.watermark.auto_watermark import AutoWatermark
 from markllm.utils.transformers_config import TransformersConfig
 
-
+config_filename = "kgw_config.json"
 model_name = "facebook/opt-125m"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 model = AutoModelForCausalLM.from_pretrained(
@@ -26,68 +26,20 @@ tf_config = TransformersConfig(
 
 watermark = AutoWatermark.load(
     "KGW", # type: ignore[arg-type]
-    algorithm_config="kgw_config.json",  # or dict (recommended)
+    algorithm_config=config_filename,
     transformers_config=tf_config,
 )
 
-def detect_watermark(text, seed=42, gamma=0.5):
-    """
-    Detect KGW watermark in a piece of text.
-
-    Parameters:
-        text (str): Input text to check.
-        seed (int): Secret RNG seed used during watermarking.
-        gamma (float): Expected fraction of green tokens (default 0.5).
-
-    Returns:
-        float: Probability score (0-1) of watermark presence.
-               Returns 0.5 (neutral) if text is too short to score.
-    """
-    inputs = tokenizer(text, return_tensors="pt")
-    inputs = {k: v.to(device) for k, v in inputs.items()}
-
-    input_tokens = inputs["input_ids"][0].cpu().numpy()
-
-    # Need at least 2 tokens (one prev + one to score)
-    if len(input_tokens) < 2:
-        return 0.5
-
-    green_count = 0
-    total = 0
-
-    # Per-token context-dependent seeding (skip first token — no prior context)
-    for i in range(1, len(input_tokens)):
-        prev_token = int(input_tokens[i - 1])
-        np.random.seed(seed + prev_token)  # mirrors watermark generation
-
-        # Use a set for O(1) lookup
-        green_list = set(
-            np.random.choice(
-                tokenizer.vocab_size,
-                size=int(tokenizer.vocab_size * gamma),
-                replace=False
-            ).tolist()
-        )
-
-        if int(input_tokens[i]) in green_list:
-            green_count += 1
-        total += 1
-
-    expected = total * gamma
-    std = np.sqrt(total * gamma * (1 - gamma))
-
-    if std == 0:
-        return 0.5
-
-    z = (green_count - expected) / std
-    prob = 1 / (1 + np.exp(-z))
-    return prob
-
 def detect_with_markllm(text):
-    result = watermark.score_text(text)
-    return result["z_score"]
+    result = watermark.detect_watermark(text)
+    return result["score"]
 
 def main():
+    with open(config_filename) as f:
+        kgw_config = json.load(f)
+
+    DEFAULT_THRESHOLD = kgw_config.get("z_threshold", 4.0)
+
     parser = argparse.ArgumentParser(
         description="Evaluate watermark detection metrics between two datasets"
     )
@@ -100,7 +52,7 @@ def main():
     parser.add_argument("--score_column", default=None,
                         help="Column containing pre-computed detector scores. "
                              "If None, scores are computed by detect_watermark().")
-    parser.add_argument("--threshold", type=float, default=0.5,
+    parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD,
                         help="Score threshold for binary classification")
     parser.add_argument("--output", default="eval_results.json",
                         help="Output JSON file for metrics")
