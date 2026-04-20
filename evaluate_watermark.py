@@ -1,7 +1,7 @@
 import argparse
 import pandas as pd
 import numpy as np
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
+from sklearn.metrics import roc_auc_score, roc_curve
 import json
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
@@ -16,6 +16,8 @@ model = AutoModelForCausalLM.from_pretrained(
     torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
 )
 device = "cuda" if torch.cuda.is_available() else "cpu"
+model.to(device) # type: ignore
+model.eval()
 
 tf_config = TransformersConfig(
     model=model,
@@ -120,17 +122,18 @@ def main():
     print(f"y_true sample:  {y_true[:5]}")
     print(f"Score range: {y_score.min():.4f} - {y_score.max():.4f}")
 
-    y_pred = (y_score >= args.threshold).astype(int)
-
     # ------------------------------------------------------------------
     # Compute metrics
     # ------------------------------------------------------------------
+    auroc = roc_auc_score(y_true, y_score)
+
+    fpr, tpr, _ = roc_curve(y_true, y_score)
+    idx = np.searchsorted(tpr, 0.95)
+    fpr_at_95_tpr = float(fpr[min(idx, len(fpr) - 1)])
+
     results = {
-        "accuracy":  round(float(accuracy_score(y_true, y_pred)), 4),
-        "precision": round(float(precision_score(y_true, y_pred, zero_division=0)), 4),
-        "recall":    round(float(recall_score(y_true, y_pred, zero_division=0)), 4),
-        "f1":        round(float(f1_score(y_true, y_pred, zero_division=0)), 4),
-        "auroc":     round(float(roc_auc_score(y_true, y_score)), 4),
+        "auroc":          round(float(auroc), 4),
+        "fpr_at_95_tpr":  round(fpr_at_95_tpr, 4),
         "n_samples_dataset1": len(df1),
         "n_samples_dataset2": len(df2),
     }
