@@ -40,11 +40,7 @@ import transformers
 import re
 import pandas as pd
 from tqdm import tqdm
-from sklearn.metrics import (
-    roc_auc_score, roc_curve, precision_recall_curve, auc,
-    f1_score, recall_score, precision_score, accuracy_score,
-)
-import matplotlib.pyplot as plt
+from sklearn.metrics import roc_auc_score, roc_curve
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -123,7 +119,7 @@ def replace_masks(texts, mask_model, mask_tokenizer):
             truncation=True, max_length=512
         ).to(DEVICE)
         outputs = mask_model.generate(
-            **inputs, max_length=150, do_sample=True, top_p=0.96
+            **inputs, max_length=512, do_sample=True, top_p=0.96
         )
     return mask_tokenizer.batch_decode(outputs, skip_special_tokens=False)
 
@@ -180,8 +176,9 @@ def detectgpt_score(text, base_model, base_tokenizer, mask_model,
 
     p_lls = []
     for pt in perturbed:
-        if len(pt.strip().split()) > 10:
+        if len(pt.strip().split()) > 10 and not re.search(r'<extra_id_\d+>', pt):
             p_lls.append(get_ll(pt, base_model, base_tokenizer))
+
 
     if len(p_lls) < 2:
         return 0.0, 0.0
@@ -228,30 +225,19 @@ def load_subset(csv_path, n_samples=None, min_words=30):
 # ============================================================
 
 def compute_clf_metrics(labels, scores):
-    """
-    Compute F1, recall, precision, accuracy, and AUROC for a scorer.
-    Classification threshold is chosen to maximise Youden's J (TPR - FPR).
-    Returns a dict of rounded metric values and the oriented scores.
-    """
     auroc = roc_auc_score(labels, scores)
-    # Orient so that higher score => AI (label=1)
     if auroc < 0.5:
         scores = [-s for s in scores]
         auroc = 1 - auroc
 
-    fpr, tpr, thresholds = roc_curve(labels, scores)
-    best_idx = int(np.argmax(tpr - fpr))
-    threshold = thresholds[best_idx]
+    fpr, tpr, _ = roc_curve(labels, scores)
+    idx = np.searchsorted(tpr, 0.95)
+    fpr_at_95_tpr = float(fpr[min(idx, len(fpr) - 1)])
 
-    preds = [1 if s >= threshold else 0 for s in scores]
     return {
-        "auroc":     round(auroc, 4),
-        "f1":        round(f1_score(labels, preds, zero_division=0), 4),
-        "recall":    round(recall_score(labels, preds, zero_division=0), 4),
-        "precision": round(precision_score(labels, preds, zero_division=0), 4),
-        "accuracy":  round(accuracy_score(labels, preds), 4),
-        "threshold": round(float(threshold), 6),
-    }, scores  # return oriented scores for plotting
+        "auroc":         round(auroc, 4),
+        "fpr_at_95_tpr": round(fpr_at_95_tpr, 4),
+    }, scores
 
 
 def run_experiment(human_texts, ai_texts, base_model, base_tokenizer,
@@ -280,99 +266,41 @@ def run_experiment(human_texts, ai_texts, base_model, base_tokenizer,
         d_scores.append(d)
         z_scores.append(z)
 
-    # --- Compute all 5 metrics for each scorer ---
-    ll_metrics, ll_scores   = compute_clf_metrics(labels, ll_scores)
-    d_metrics,  d_scores    = compute_clf_metrics(labels, d_scores)
-    z_metrics,  z_scores    = compute_clf_metrics(labels, z_scores)
+    # --- Compute metrics for each scorer ---
+    ll_metrics, _ = compute_clf_metrics(labels, ll_scores)
+    d_metrics,  _ = compute_clf_metrics(labels, d_scores)
+    z_metrics,  _ = compute_clf_metrics(labels, z_scores)
 
-    print(f"\n{'='*65}")
-    print(f"{'Metric':<12} {'Log-likelihood':>16} {'DetectGPT-d':>14} {'DetectGPT-z':>14}")
-    print(f"{'-'*65}")
-    for key in ("auroc", "f1", "recall", "precision", "accuracy"):
-        print(f"{key:<12} {ll_metrics[key]:>16.4f} {d_metrics[key]:>14.4f} {z_metrics[key]:>14.4f}")
-    print(f"{'='*65}")
+    n_samples_dataset1 = len(human_texts)
+    n_samples_dataset2 = len(ai_texts)
 
-    # --- Save everything ---
     results = {
-        "n_human": len(human_texts),
-        "n_ai": len(ai_texts),
-        "n_perturbations": n_perturbations,
-        "metrics": {
-            "log_likelihood": ll_metrics,
-            "detectgpt_d":    d_metrics,
-            "detectgpt_z":    z_metrics,
+        "log_likelihood": {
+            **ll_metrics,
+            "n_samples_dataset1": n_samples_dataset1,
+            "n_samples_dataset2": n_samples_dataset2,
         },
-        "scores": {
-            "ll":     ll_scores,
-            "d":      d_scores,
-            "z":      z_scores,
-            "labels": labels,
+        "detectgpt_d": {
+            **d_metrics,
+            "n_samples_dataset1": n_samples_dataset1,
+            "n_samples_dataset2": n_samples_dataset2,
+        },
+        "detectgpt_z": {
+            **z_metrics,
+            "n_samples_dataset1": n_samples_dataset1,
+            "n_samples_dataset2": n_samples_dataset2,
         },
     }
-    with open(os.path.join(output_dir, "results.json"), "w") as f:
+
+    for scorer_name, scorer_results in results.items():
+        print(f"\nEvaluation Results ({scorer_name}):")
+        for k, v in scorer_results.items():
+            print(f"  {k}: {v}")
+
+    output_path = os.path.join(output_dir, "results.json")
+    with open(output_path, "w") as f:
         json.dump(results, f, indent=2)
-
-    # ---- Plot 1: ROC curves ----
-    fig, ax = plt.subplots(figsize=(8, 6))
-    for scores, name, metrics in [
-        (ll_scores, "Log-likelihood",  ll_metrics),
-        (d_scores,  "DetectGPT-d",     d_metrics),
-        (z_scores,  "DetectGPT-z",     z_metrics),
-    ]:
-        fpr, tpr, _ = roc_curve(labels, scores)
-        ax.plot(fpr, tpr, label=f"{name} (AUROC={metrics['auroc']:.3f})")
-    ax.plot([0, 1], [0, 1], 'k--', alpha=0.5)
-    ax.set_xlabel("False Positive Rate")
-    ax.set_ylabel("True Positive Rate")
-    ax.set_title("ROC Curves — DetectGPT on Project Dataset")
-    ax.legend(loc="lower right")
-    fig.savefig(os.path.join(output_dir, "roc.png"), dpi=150, bbox_inches="tight")
-    plt.close()
-
-    # ---- Plot 2: Precision-Recall curves ----
-    fig, ax = plt.subplots(figsize=(8, 6))
-    for scores, name in [
-        (ll_scores, "Log-likelihood"),
-        (d_scores,  "DetectGPT-d"),
-        (z_scores,  "DetectGPT-z"),
-    ]:
-        prec, rec, _ = precision_recall_curve(labels, scores)
-        pr_auc = auc(rec, prec)
-        ax.plot(rec, prec, label=f"{name} (AUC={pr_auc:.3f})")
-    baseline = sum(labels) / len(labels)
-    ax.axhline(baseline, color='k', linestyle='--', alpha=0.5, label=f"Baseline ({baseline:.2f})")
-    ax.set_xlabel("Recall")
-    ax.set_ylabel("Precision")
-    ax.set_title("Precision-Recall Curves — DetectGPT on Project Dataset")
-    ax.legend(loc="upper right")
-    fig.savefig(os.path.join(output_dir, "pr_curve.png"), dpi=150, bbox_inches="tight")
-    plt.close()
-
-    # ---- Plot 3: Bar chart of all 5 metrics ----
-    metric_keys  = ["auroc", "f1", "recall", "precision", "accuracy"]
-    scorer_names = ["Log-likelihood", "DetectGPT-d", "DetectGPT-z"]
-    scorer_data  = [ll_metrics, d_metrics, z_metrics]
-
-    x = np.arange(len(metric_keys))
-    width = 0.25
-    fig, ax = plt.subplots(figsize=(10, 6))
-    for i, (name, data) in enumerate(zip(scorer_names, scorer_data)):
-        vals = [data[k] for k in metric_keys]
-        ax.bar(x + i * width, vals, width, label=name)
-        for j, v in enumerate(vals):
-            ax.text(x[j] + i * width, v + 0.01, f"{v:.2f}", ha="center",
-                    va="bottom", fontsize=8)
-    ax.set_xticks(x + width)
-    ax.set_xticklabels([k.upper() for k in metric_keys])
-    ax.set_ylim(0, 1.15)
-    ax.set_ylabel("Score")
-    ax.set_title("Classification Metrics — DetectGPT on Project Dataset")
-    ax.legend()
-    fig.savefig(os.path.join(output_dir, "metrics_bar.png"), dpi=150, bbox_inches="tight")
-    plt.close()
-
-    print(f"\nResults saved to {output_dir}/")
-    print(f"  results.json, roc.png, pr_curve.png, metrics_bar.png")
+    print(f"\nResults saved to {output_path}")
 
 
 # ============================================================
@@ -391,9 +319,10 @@ def main():
                    help="Name for the output folder")
     p.add_argument("--n_samples", type=int, default=100,
                    help="Max samples per class (human and AI)")
-    p.add_argument("--n_perturbations", type=int, default=10,
+    p.add_argument("--n_perturbations", type=int, default=50,
                    help="Number of T5 perturbations per text")
-    p.add_argument("--base_model_name", default="gpt2-medium")
+    p.add_argument("--base_model_name", required=True, 
+                   help="Model that generated the AI-text")
     p.add_argument("--mask_model_name", default="t5-large")
     p.add_argument("--cache_dir", default="/root/.cache")
     p.add_argument("--output_base", default="eval_results",
