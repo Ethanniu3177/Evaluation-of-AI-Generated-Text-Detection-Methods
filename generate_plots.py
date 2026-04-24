@@ -14,7 +14,6 @@ from sklearn.metrics import roc_curve, roc_auc_score
 results_dir = "experiment_results"
 plots_dir = "plots"
 
-# Human-readable labels for each experiment file
 EXPERIMENT_LABELS = {
     "baseline_1":     "Baseline 1\nPlain AI vs. Human (AI Detector)",
     "baseline_2":     "Baseline 2\nParaphrased AI vs. Human (AI Detector)",
@@ -37,7 +36,6 @@ SHORT_LABELS = {
     "paraphrasing_3": "P3: Para-Wm vs. Human",
 }
 
-# Colour per experiment — consistent across all plots
 COLORS = {
     "baseline_1":     "#673AB7",
     "baseline_2":     "#00BCD4",
@@ -49,7 +47,6 @@ COLORS = {
     "paraphrasing_3": "#F44336",
 }
 
-# Display order
 ORDER = [
     "baseline_1", "baseline_2", "baseline_3",
     "baseline_4", "baseline_5",
@@ -92,7 +89,10 @@ def plot_roc_curves(data, plots_dir):
     ax.plot([0, 1], [0, 1], "k--", linewidth=1, label="Random (AUC=0.500)")
     ax.set_xlabel("False Positive Rate", fontsize=12)
     ax.set_ylabel("True Positive Rate", fontsize=12)
-    ax.set_title("ROC Curves — Watermark Detector", fontsize=14, fontweight="bold")
+
+    ax.set_title("ROC Curves: Detection Performance Across Methods",
+                 fontsize=14, fontweight="bold")
+
     ax.legend(fontsize=9, loc="lower right")
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1.02)
@@ -108,6 +108,7 @@ def plot_roc_curves(data, plots_dir):
 def plot_auroc_bar(data, plots_dir):
     keys = [k for k in ORDER if k in data]
     aurocs = []
+
     for key in keys:
         _, _, auroc, _ = compute_metrics(data[key])
         aurocs.append(auroc)
@@ -126,7 +127,10 @@ def plot_auroc_bar(data, plots_dir):
     ax.set_xticklabels([SHORT_LABELS[k] for k in keys], fontsize=8)
     ax.set_ylabel("AUROC", fontsize=12)
     ax.set_ylim(0, 1.12)
-    ax.set_title("AUROC by Experiment — Watermark Detector", fontsize=14, fontweight="bold")
+
+    ax.set_title("AUROC by Experiment (DetectGPT + Watermarking)",
+                 fontsize=14, fontweight="bold")
+
     ax.legend(fontsize=10)
     ax.grid(axis="y", alpha=0.3)
     fig.tight_layout()
@@ -156,20 +160,29 @@ def plot_score_distributions(data, plots_dir):
         scores_pos = y_score[y_true == 1]
 
         bins = np.linspace(y_score.min(), y_score.max(), 40)
-        ax.hist(scores_neg, bins=bins, alpha=0.6, color="#9E9E9E", label="Negative class", density=True)
-        ax.hist(scores_pos, bins=bins, alpha=0.6, color=COLORS[key], label="Positive class", density=True)
+
+        ax.hist(scores_neg, bins=bins, alpha=0.6, color="#9E9E9E",
+                label="Negative class", density=True)
+        ax.hist(scores_pos, bins=bins, alpha=0.6, color=COLORS[key],
+                label="Positive class", density=True)
 
         _, _, auroc, _ = compute_metrics(entry)
-        ax.set_title(f"{SHORT_LABELS[key]}\n(AUC={auroc:.3f})", fontsize=9, fontweight="bold")
-        ax.set_xlabel("Watermark Z-Score", fontsize=9)
+
+        ax.set_title(f"{SHORT_LABELS[key]}\n(AUC={auroc:.3f})",
+                     fontsize=9, fontweight="bold")
+
+        ax.set_xlabel("Detection Score", fontsize=9)
         ax.set_ylabel("Density", fontsize=9)
+
         ax.legend(fontsize=8)
         ax.grid(True, alpha=0.3)
 
     for j in range(len(keys), len(axes)):
         axes[j].set_visible(False)
 
-    fig.suptitle("Score Distributions — Watermark Detector", fontsize=14, fontweight="bold", y=1.01)
+    fig.suptitle("Score Distributions Across Detection Methods",
+                 fontsize=14, fontweight="bold", y=1.01)
+
     fig.tight_layout()
     path = os.path.join(plots_dir, "score_distributions.png")
     fig.savefig(path, dpi=150, bbox_inches="tight")
@@ -181,6 +194,7 @@ def plot_score_distributions(data, plots_dir):
 def plot_fpr_bar(data, plots_dir):
     keys = [k for k in ORDER if k in data]
     fprs = []
+
     for key in keys:
         _, _, _, fpr_at_95 = compute_metrics(data[key])
         fprs.append(fpr_at_95)
@@ -192,14 +206,20 @@ def plot_fpr_bar(data, plots_dir):
 
     for bar, val in zip(bars, fprs):
         ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.01,
-                f"{val:.3f}", ha="center", va="bottom", fontsize=10, fontweight="bold")
+                f"{val:.3f}", ha="center", va="bottom",
+                fontsize=10, fontweight="bold")
 
-    ax.axhline(0.05, color="green", linestyle="--", linewidth=1, label="5% FPR target")
+    ax.axhline(0.05, color="green", linestyle="--", linewidth=1,
+               label="5% FPR target")
+
     ax.set_xticks(x)
     ax.set_xticklabels([SHORT_LABELS[k] for k in keys], fontsize=8)
     ax.set_ylabel("FPR @ 95% TPR", fontsize=12)
     ax.set_ylim(0, 1.15)
-    ax.set_title("FPR@95TPR by Experiment — Watermark Detector", fontsize=14, fontweight="bold")
+
+    ax.set_title("FPR@95TPR by Experiment (Lower is Better)",
+                 fontsize=14, fontweight="bold")
+
     ax.legend(fontsize=10)
     ax.grid(axis="y", alpha=0.3)
     fig.tight_layout()
@@ -218,6 +238,10 @@ def main():
         return
 
     print(f"Loaded experiments: {list(data.keys())}\n")
+
+    for name, results in data.items():
+        print(name)
+        print(f'auroc: {results["auroc"]}, fpr_at_95_tpr: {results["fpr_at_95_tpr"]}')
 
     plot_roc_curves(data, plots_dir)
     plot_auroc_bar(data, plots_dir)
