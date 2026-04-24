@@ -15,25 +15,25 @@ results_dir = "experiment_results"
 plots_dir = "plots"
 
 EXPERIMENT_LABELS = {
-    "baseline_1":     "Baseline 1\nPlain AI vs. Human (AI Detector)",
-    "baseline_2":     "Baseline 2\nParaphrased AI vs. Human (AI Detector)",
-    "baseline_3":     "Baseline 3\nWatermarked vs. Plain AI",
-    "baseline_4":     "Baseline 4\nWatermarked vs. Human",
-    "baseline_5":     "Baseline 5\nPlain AI vs. Human",
-    "paraphrasing_1": "Paraphrasing 1\nParaphrased Watermarked vs. Watermarked",
-    "paraphrasing_2": "Paraphrasing 2\nParaphrased Watermarked vs. Plain AI",
-    "paraphrasing_3": "Paraphrasing 3\nParaphrased Watermarked vs. Human",
+    "baseline_1":     "Baseline 1\nDetectGPT: Plain AI vs. Human",
+    "baseline_2":     "Baseline 2\nDetectGPT: Watermarked AI vs. Human",
+    "baseline_3":     "Baseline 3\nWatermark Detector: Watermarked AI vs. Plain AI",
+    "baseline_4":     "Baseline 4\nWatermark Detector: Watermarked AI vs. Human",
+    "baseline_5":     "Baseline 5\nWatermark Detector: Plain AI vs. Human",
+    "paraphrasing_1": "Paraphrasing 1\nDetectGPT: Paraphrased AI vs. Human",
+    "paraphrasing_2": "Paraphrasing 2\nWatermark Detector: Paraphrased Watermarked AI vs. Plain AI",
+    "paraphrasing_3": "Paraphrasing 3\nWatermark Detector: Paraphrased Watermarked AI vs. Human",
 }
 
 SHORT_LABELS = {
-    "baseline_1":     "B1: Plain AI vs. Human",
-    "baseline_2":     "B2: Para-AI vs. Human",
-    "baseline_3":     "B3: Wm vs. Plain AI",
-    "baseline_4":     "B4: Wm vs. Human",
-    "baseline_5":     "B5: Plain AI vs. Human",
-    "paraphrasing_1": "P1: Para-Wm vs. Wm",
-    "paraphrasing_2": "P2: Para-Wm vs. Plain AI",
-    "paraphrasing_3": "P3: Para-Wm vs. Human",
+    "baseline_1":     "B1: DetectGPT Plain AI vs. Human",
+    "baseline_2":     "B2: DetectGPT Wm AI vs. Human",
+    "baseline_3":     "B3: WmDet Wm vs. Plain AI",
+    "baseline_4":     "B4: WmDet Wm vs. Human",
+    "baseline_5":     "B5: WmDet Plain AI vs. Human",
+    "paraphrasing_1": "P1: DetectGPT Para-AI vs. Human",
+    "paraphrasing_2": "P2: WmDet Para-Wm vs. Plain AI",
+    "paraphrasing_3": "P3: WmDet Para-Wm vs. Human",
 }
 
 COLORS = {
@@ -124,7 +124,7 @@ def plot_auroc_bar(data, plots_dir):
 
     ax.axhline(0.5, color="black", linestyle="--", linewidth=1, label="Random baseline")
     ax.set_xticks(x)
-    ax.set_xticklabels([SHORT_LABELS[k] for k in keys], fontsize=8)
+    ax.set_xticklabels([SHORT_LABELS[k] for k in keys], fontsize=8, rotation=45, ha="right")
     ax.set_ylabel("AUROC", fontsize=12)
     ax.set_ylim(0, 1.12)
 
@@ -133,6 +133,7 @@ def plot_auroc_bar(data, plots_dir):
 
     ax.legend(fontsize=10)
     ax.grid(axis="y", alpha=0.3)
+    fig.subplots_adjust(bottom=0.25)
     fig.tight_layout()
     path = os.path.join(plots_dir, "auroc_bar.png")
     fig.savefig(path, dpi=150)
@@ -213,7 +214,7 @@ def plot_fpr_bar(data, plots_dir):
                label="5% FPR target")
 
     ax.set_xticks(x)
-    ax.set_xticklabels([SHORT_LABELS[k] for k in keys], fontsize=8)
+    ax.set_xticklabels([SHORT_LABELS[k] for k in keys], fontsize=8, rotation=45, ha="right")
     ax.set_ylabel("FPR @ 95% TPR", fontsize=12)
     ax.set_ylim(0, 1.15)
 
@@ -222,6 +223,7 @@ def plot_fpr_bar(data, plots_dir):
 
     ax.legend(fontsize=10)
     ax.grid(axis="y", alpha=0.3)
+    fig.subplots_adjust(bottom=0.25)
     fig.tight_layout()
     path = os.path.join(plots_dir, "fpr_at_95tpr_bar.png")
     fig.savefig(path, dpi=150)
