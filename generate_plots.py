@@ -11,7 +11,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.metrics import roc_curve, roc_auc_score
 
-results_dir = "test_result"
+results_dir = "experiment_results"
 plots_dir = "plots"
 
 # Human-readable labels for each experiment file

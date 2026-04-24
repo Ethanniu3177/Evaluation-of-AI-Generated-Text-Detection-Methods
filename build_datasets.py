@@ -95,7 +95,7 @@ def load_raid_dataframe(split: str = "train", base_dir: str = "data") -> pd.Data
         info(f"Found local cached RAID file: {local_csv}")
         info("Loading RAID from local CSV...")
 
-        df = pd.read_csv(local_csv, skiprows=lambda i: i > 0 and random.random() > 0.01)
+        df = pd.read_csv(local_csv, skiprows=lambda i: i > 0 and random.random() > 0.05)
 
         info(f"Loaded local RAID CSV with {len(df):,} rows")
         return df
