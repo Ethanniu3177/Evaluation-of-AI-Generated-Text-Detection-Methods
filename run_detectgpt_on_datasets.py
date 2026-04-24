@@ -194,24 +194,26 @@ def detectgpt_score(text, base_model, base_tokenizer, mask_model,
 # DATA LOADING — reads YOUR build_datasets.py output
 # ============================================================
 
-def load_subset(csv_path, n_samples=None, min_words=30):
+def load_subset(csv_path, n_samples=None, min_words=30, generator_model=None):
     """Load a processed CSV from data/processed/."""
     print(f"Loading {csv_path}...")
     df = pd.read_csv(csv_path)
 
-    # Filter: need a 'text' column with enough content
     if "text" not in df.columns:
         raise ValueError(f"CSV must have a 'text' column. Found: {df.columns.tolist()}")
 
     df = df[df["text"].notna()].copy()
     df = df[df["text"].str.split().str.len() >= min_words].copy()
 
+    if generator_model and "generator_model" in df.columns:
+        df = df[df["generator_model"] == generator_model].copy()
+        print(f"  Filtered to generator_model='{generator_model}': {len(df)} rows")
+
     if n_samples and len(df) > n_samples:
         df = df.sample(n=n_samples, random_state=42).reset_index(drop=True)
 
     print(f"  Loaded {len(df)} samples (min {min_words} words)")
 
-    # Print domain/model breakdown if columns exist
     if "generator_model" in df.columns:
         print(f"  Models: {df['generator_model'].value_counts().head(5).to_dict()}")
     if "domain" in df.columns:
@@ -267,9 +269,9 @@ def run_experiment(human_texts, ai_texts, base_model, base_tokenizer,
         z_scores.append(z)
 
     # --- Compute metrics for each scorer ---
-    ll_metrics, _ = compute_clf_metrics(labels, ll_scores)
-    d_metrics,  _ = compute_clf_metrics(labels, d_scores)
-    z_metrics,  _ = compute_clf_metrics(labels, z_scores)
+    ll_metrics, ll_oriented = compute_clf_metrics(labels, ll_scores)
+    d_metrics,  d_oriented  = compute_clf_metrics(labels, d_scores)
+    z_metrics,  z_oriented  = compute_clf_metrics(labels, z_scores)
 
     n_samples_dataset1 = len(human_texts)
     n_samples_dataset2 = len(ai_texts)
@@ -279,23 +281,30 @@ def run_experiment(human_texts, ai_texts, base_model, base_tokenizer,
             **ll_metrics,
             "n_samples_dataset1": n_samples_dataset1,
             "n_samples_dataset2": n_samples_dataset2,
+            "y_true":  labels,
+            "y_score": ll_oriented,
         },
         "detectgpt_d": {
             **d_metrics,
             "n_samples_dataset1": n_samples_dataset1,
             "n_samples_dataset2": n_samples_dataset2,
+            "y_true":  labels,
+            "y_score": d_oriented,
         },
         "detectgpt_z": {
             **z_metrics,
             "n_samples_dataset1": n_samples_dataset1,
             "n_samples_dataset2": n_samples_dataset2,
+            "y_true":  labels,
+            "y_score": z_oriented,
         },
     }
 
     for scorer_name, scorer_results in results.items():
         print(f"\nEvaluation Results ({scorer_name}):")
         for k, v in scorer_results.items():
-            print(f"  {k}: {v}")
+            if k not in ("y_true", "y_score"):
+                print(f"  {k}: {v}")
 
     output_path = os.path.join(output_dir, "results.json")
     with open(output_path, "w") as f:
@@ -321,8 +330,10 @@ def main():
                    help="Max samples per class (human and AI)")
     p.add_argument("--n_perturbations", type=int, default=50,
                    help="Number of T5 perturbations per text")
-    p.add_argument("--base_model_name", required=True, 
-                   help="Model that generated the AI-text")
+    p.add_argument("--base_model_name", default="gpt2",
+                   help="Model that generated the AI-text (default: gpt2)")
+    p.add_argument("--generator_model", default="gpt2",
+                   help="Filter AI CSV rows to this generator_model value (default: gpt2)")
     p.add_argument("--mask_model_name", default="t5-large")
     p.add_argument("--cache_dir", default="/root/.cache")
     p.add_argument("--output_base", default="eval_results",
@@ -338,7 +349,7 @@ def main():
 
     # Load data from your CSVs
     human_texts = load_subset(args.human_csv, n_samples=args.n_samples)
-    ai_texts = load_subset(args.ai_csv, n_samples=args.n_samples)
+    ai_texts = load_subset(args.ai_csv, n_samples=args.n_samples, generator_model=args.generator_model)
 
     # Run
     run_experiment(

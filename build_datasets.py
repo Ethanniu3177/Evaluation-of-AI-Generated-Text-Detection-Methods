@@ -236,14 +236,18 @@ def get_plain_human(raid_df: pd.DataFrame, split: str) -> pd.DataFrame:
     return standardize_raid_subset(subset, label="human", variant="plain_human", split=split)
 
 
-def get_plain_ai(raid_df: pd.DataFrame, split: str) -> pd.DataFrame:
+def get_plain_ai(raid_df: pd.DataFrame, split: str, generator_model: Optional[str] = None) -> pd.DataFrame:
     subset = raid_df[(raid_df["model"] != "human") & (raid_df["attack"] == "none")].copy()
+    if generator_model:
+        subset = subset[subset["model"] == generator_model].copy()
     info(f"plain_ai raw rows found: {len(subset):,}")
     return standardize_raid_subset(subset, label="ai", variant="plain_ai", split=split)
 
 
-def get_paraphrased_ai(raid_df: pd.DataFrame, split: str) -> pd.DataFrame:
+def get_paraphrased_ai(raid_df: pd.DataFrame, split: str, generator_model: Optional[str] = None) -> pd.DataFrame:
     subset = raid_df[(raid_df["model"] != "human") & (raid_df["attack"] == "paraphrase")].copy()
+    if generator_model:
+        subset = subset[subset["model"] == generator_model].copy()
     info(f"paraphrased_ai raw rows found: {len(subset):,}")
     return standardize_raid_subset(subset, label="ai", variant="paraphrased_ai", split=split)
 
@@ -264,7 +268,7 @@ def save_jsonl(df: pd.DataFrame, path: Path) -> None:
     info(f"Saved {len(df):,} rows to {path}")
 
 
-def process_raid(split: str, base_dir: str, seed: int, max_rows_per_raid_subset: Optional[int], debug: bool) -> None:
+def process_raid(split: str, base_dir: str, seed: int, max_rows_per_raid_subset: Optional[int], debug: bool, generator_model: Optional[str] = None) -> None:
     base_dir_path, processed_dir = ensure_output_dirs(base_dir)
     info("Starting RAID load step...")
     raid_df = load_raid_dataframe(split=split, base_dir=str(base_dir_path))
@@ -273,8 +277,8 @@ def process_raid(split: str, base_dir: str, seed: int, max_rows_per_raid_subset:
     info(f"Total RAID rows loaded: {len(raid_df):,}")
 
     plain_human_df = maybe_sample(get_plain_human(raid_df, split), max_rows_per_raid_subset, seed)
-    plain_ai_df = maybe_sample(get_plain_ai(raid_df, split), max_rows_per_raid_subset, seed)
-    paraphrased_ai_df = maybe_sample(get_paraphrased_ai(raid_df, split), max_rows_per_raid_subset, seed)
+    plain_ai_df = maybe_sample(get_plain_ai(raid_df, split, generator_model), max_rows_per_raid_subset, seed)
+    paraphrased_ai_df = maybe_sample(get_paraphrased_ai(raid_df, split, generator_model), max_rows_per_raid_subset, seed)
 
     save_csv(plain_human_df, processed_dir / "plain_human.csv")
     save_csv(plain_ai_df, processed_dir / "plain_ai.csv")
@@ -502,6 +506,7 @@ def cmd_process_raid(args) -> None:
         seed=args.seed,
         max_rows_per_raid_subset=args.max_rows_per_raid_subset,
         debug=args.debug,
+        generator_model=args.generator_model,
     )
 
 
@@ -541,6 +546,7 @@ def cmd_all(args) -> None:
         seed=args.seed,
         max_rows_per_raid_subset=args.max_rows_per_raid_subset,
         debug=args.debug,
+        generator_model=args.generator_model,
     )
     cmd_watermark(args)
 
@@ -565,6 +571,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_process = subparsers.add_parser("process_raid", help="Build plain_human/plain_ai/paraphrased_ai from cached RAID.")
     add_common_arguments(p_process)
     p_process.add_argument("--max-rows-per-raid-subset", type=int, default=None)
+    p_process.add_argument("--generator-model", type=str, default=None,
+                           help="Filter AI rows to a single generator model (e.g. gpt2, chatgpt).")
     p_process.set_defaults(func=cmd_process_raid)
 
     p_watermark = subparsers.add_parser("watermark", help="Generate watermarked text from cached RAID prompts.")
@@ -579,6 +587,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_all = subparsers.add_parser("all", help="Process RAID and then generate watermarked text.")
     add_common_arguments(p_all)
     p_all.add_argument("--max-rows-per-raid-subset", type=int, default=None)
+    p_all.add_argument("--generator-model", type=str, default=None,
+                       help="Filter AI rows to a single generator model (e.g. gpt2, chatgpt).")
     p_all.add_argument("--max-watermark-rows", type=int, default=100)
     p_all.add_argument("--watermark-algorithm", type=str, default="KGW")
     p_all.add_argument("--watermark-model", type=str, default="facebook/opt-125m")
