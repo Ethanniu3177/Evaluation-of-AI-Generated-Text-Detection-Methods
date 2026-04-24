@@ -9,7 +9,7 @@ from markllm.watermark.auto_watermark import AutoWatermark
 from markllm.utils.transformers_config import TransformersConfig
 
 config_filename = "kgw_config.json"
-model_name = "facebook/opt-125m"
+model_name = "gpt2"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 model = AutoModelForCausalLM.from_pretrained(
     model_name,

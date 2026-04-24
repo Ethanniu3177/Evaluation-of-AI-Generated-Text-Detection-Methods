@@ -295,7 +295,7 @@ def process_raid(split: str, base_dir: str, seed: int, max_rows_per_raid_subset:
 # -----------------------------
 def build_markllm_generator(
     algorithm_name: str = "KGW",
-    model_name: str = "facebook/opt-125m",
+    model_name: str = "gpt2",
     max_new_tokens: int = 160,
 ):
     import torch
@@ -579,7 +579,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_common_arguments(p_watermark)
     p_watermark.add_argument("--max-watermark-rows", type=int, default=100)
     p_watermark.add_argument("--watermark-algorithm", type=str, default="KGW")
-    p_watermark.add_argument("--watermark-model", type=str, default="facebook/opt-125m")
+    p_watermark.add_argument("--watermark-model", type=str, default="gpt2")
     p_watermark.add_argument("--max-new-tokens", type=int, default=160)
     p_watermark.add_argument("--prompt-mode", choices=["raw", "chat"], default="chat")
     p_watermark.set_defaults(func=cmd_watermark)
@@ -591,7 +591,7 @@ def build_parser() -> argparse.ArgumentParser:
                        help="Filter AI rows to a single generator model (e.g. gpt2, chatgpt).")
     p_all.add_argument("--max-watermark-rows", type=int, default=100)
     p_all.add_argument("--watermark-algorithm", type=str, default="KGW")
-    p_all.add_argument("--watermark-model", type=str, default="facebook/opt-125m")
+    p_all.add_argument("--watermark-model", type=str, default="gpt2")
     p_all.add_argument("--max-new-tokens", type=int, default=160)
     p_all.add_argument("--prompt-mode", choices=["raw", "chat"], default="chat")
     p_all.set_defaults(func=cmd_all)

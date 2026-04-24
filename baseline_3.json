@@ -1,0 +1,6 @@
+{
+  "auroc": 0.9914,
+  "fpr_at_95_tpr": 0.01,
+  "n_samples_dataset1": 100,
+  "n_samples_dataset2": 100
+}
