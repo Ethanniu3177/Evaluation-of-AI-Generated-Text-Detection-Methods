@@ -136,6 +136,8 @@ def main():
         "fpr_at_95_tpr":  round(fpr_at_95_tpr, 4),
         "n_samples_dataset1": len(df1),
         "n_samples_dataset2": len(df2),
+        "y_true":   y_true.tolist(),
+        "y_score":  y_score.tolist()
     }
 
     # ------------------------------------------------------------------
