@@ -210,4 +210,10 @@ __marimo__/
 data/train.csv
 dataset/
 **/eval_results.json
+<<<<<<< HEAD
 evaluate_all_watermark.sh
+=======
+
+# Detectgpt
+detectgpt/
+>>>>>>> 6c1fea7 (update results for detectgpt)
