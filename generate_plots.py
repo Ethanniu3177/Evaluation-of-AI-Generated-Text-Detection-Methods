@@ -16,32 +16,45 @@ plots_dir = "plots"
 
 # Human-readable labels for each experiment file
 EXPERIMENT_LABELS = {
-    "baseline_3": "Baseline 3\nWatermarked vs. Plain AI",
-    "baseline_4": "Baseline 4\nWatermarked vs. Human",
-    "baseline_5": "Baseline 5\nPlain AI vs. Human",
+    "baseline_1":     "Baseline 1\nPlain AI vs. Human (AI Detector)",
+    "baseline_2":     "Baseline 2\nParaphrased AI vs. Human (AI Detector)",
+    "baseline_3":     "Baseline 3\nWatermarked vs. Plain AI",
+    "baseline_4":     "Baseline 4\nWatermarked vs. Human",
+    "baseline_5":     "Baseline 5\nPlain AI vs. Human",
+    "paraphrasing_1": "Paraphrasing 1\nParaphrased Watermarked vs. Watermarked",
     "paraphrasing_2": "Paraphrasing 2\nParaphrased Watermarked vs. Plain AI",
     "paraphrasing_3": "Paraphrasing 3\nParaphrased Watermarked vs. Human",
 }
 
 SHORT_LABELS = {
+    "baseline_1":     "B1: Plain AI vs. Human",
+    "baseline_2":     "B2: Para-AI vs. Human",
     "baseline_3":     "B3: Wm vs. Plain AI",
     "baseline_4":     "B4: Wm vs. Human",
     "baseline_5":     "B5: Plain AI vs. Human",
+    "paraphrasing_1": "P1: Para-Wm vs. Wm",
     "paraphrasing_2": "P2: Para-Wm vs. Plain AI",
     "paraphrasing_3": "P3: Para-Wm vs. Human",
 }
 
 # Colour per experiment — consistent across all plots
 COLORS = {
+    "baseline_1":     "#673AB7",
+    "baseline_2":     "#00BCD4",
     "baseline_3":     "#2196F3",
     "baseline_4":     "#4CAF50",
     "baseline_5":     "#9E9E9E",
+    "paraphrasing_1": "#795548",
     "paraphrasing_2": "#FF9800",
     "paraphrasing_3": "#F44336",
 }
 
 # Display order
-ORDER = ["baseline_3", "baseline_4", "baseline_5", "paraphrasing_2", "paraphrasing_3"]
+ORDER = [
+    "baseline_1", "baseline_2", "baseline_3",
+    "baseline_4", "baseline_5",
+    "paraphrasing_1", "paraphrasing_2", "paraphrasing_3",
+]
 
 
 def load_results(results_dir):
@@ -100,7 +113,7 @@ def plot_auroc_bar(data, plots_dir):
         aurocs.append(auroc)
 
     x = np.arange(len(keys))
-    fig, ax = plt.subplots(figsize=(9, 5))
+    fig, ax = plt.subplots(figsize=(11, 5))
     bars = ax.bar(x, aurocs, color=[COLORS[k] for k in keys],
                   width=0.55, edgecolor="white", linewidth=0.8)
 
@@ -110,7 +123,7 @@ def plot_auroc_bar(data, plots_dir):
 
     ax.axhline(0.5, color="black", linestyle="--", linewidth=1, label="Random baseline")
     ax.set_xticks(x)
-    ax.set_xticklabels([SHORT_LABELS[k] for k in keys], fontsize=9)
+    ax.set_xticklabels([SHORT_LABELS[k] for k in keys], fontsize=8)
     ax.set_ylabel("AUROC", fontsize=12)
     ax.set_ylim(0, 1.12)
     ax.set_title("AUROC by Experiment — Watermark Detector", fontsize=14, fontweight="bold")
@@ -127,7 +140,7 @@ def plot_auroc_bar(data, plots_dir):
 def plot_score_distributions(data, plots_dir):
     keys = [k for k in ORDER if k in data]
     n = len(keys)
-    ncols = 3
+    ncols = 4
     nrows = (n + ncols - 1) // ncols
 
     fig, axes = plt.subplots(nrows, ncols, figsize=(5 * ncols, 4 * nrows))
@@ -153,8 +166,8 @@ def plot_score_distributions(data, plots_dir):
         ax.legend(fontsize=8)
         ax.grid(True, alpha=0.3)
 
-        for j in range(i + 1, len(axes)):
-            axes[j].set_visible(False)
+    for j in range(len(keys), len(axes)):
+        axes[j].set_visible(False)
 
     fig.suptitle("Score Distributions — Watermark Detector", fontsize=14, fontweight="bold", y=1.01)
     fig.tight_layout()
@@ -173,7 +186,7 @@ def plot_fpr_bar(data, plots_dir):
         fprs.append(fpr_at_95)
 
     x = np.arange(len(keys))
-    fig, ax = plt.subplots(figsize=(9, 5))
+    fig, ax = plt.subplots(figsize=(11, 5))
     bars = ax.bar(x, fprs, color=[COLORS[k] for k in keys],
                   width=0.55, edgecolor="white", linewidth=0.8)
 
@@ -183,7 +196,7 @@ def plot_fpr_bar(data, plots_dir):
 
     ax.axhline(0.05, color="green", linestyle="--", linewidth=1, label="5% FPR target")
     ax.set_xticks(x)
-    ax.set_xticklabels([SHORT_LABELS[k] for k in keys], fontsize=9)
+    ax.set_xticklabels([SHORT_LABELS[k] for k in keys], fontsize=8)
     ax.set_ylabel("FPR @ 95% TPR", fontsize=12)
     ax.set_ylim(0, 1.15)
     ax.set_title("FPR@95TPR by Experiment — Watermark Detector", fontsize=14, fontweight="bold")
