@@ -1,34 +1,33 @@
 """
-run_detectgpt_on_datasets.py
+Experiment 4.1: Human vs AI
+  !python /content/Evaluation-of-AI-Generated-Text-Detection-Methods/run_detectgpt_on_datasets.py \
+    --human_csv /content/Evaluation-of-AI-Generated-Text-Detection-Methods/data/processed/plain_human.csv \
+    --ai_csv /content/Evaluation-of-AI-Generated-Text-Detection-Methods/data/processed/plain_ai.csv \
+    --experiment_name human_vs_plain_ai \
+    --n_samples 100 \
+    --n_perturbations 50 \
+    --base_model_name gpt2 \
+    --generator_model gpt2
+      
 
-Runs DetectGPT scoring on the processed CSV files produced by build_datasets.py.
-Place this file in your project root (same level as build_datasets.py).
-
-Your data/processed/ folder should contain:
-  - plain_human.csv
-  - plain_ai.csv
-  - paraphrased_ai.csv
-  - watermarked_ai_<N>.csv
-
-Usage (in Colab):
-  # Experiment 4.1: Human vs AI
-  !python run_detectgpt_on_datasets.py \
-      --human_csv data/processed/plain_human.csv \
-      --ai_csv data/processed/plain_ai.csv \
-      --experiment_name human_vs_ai \
-      --n_samples 100
-
-  # Experiment 4.2: Human vs Paraphrased AI
+Experiment 4.2: Human vs Paraphrased AI
   !python run_detectgpt_on_datasets.py \
       --human_csv data/processed/plain_human.csv \
       --ai_csv data/processed/paraphrased_ai.csv \
-      --experiment_name human_vs_paraphrased
+      --experiment_name human_vs_paraphrased \
+      --n_samples 100 \
+      --n_perturbations 50 \
+      --base_model_name gpt2
 
-  # Experiment 4.3: Human vs Watermarked AI
+Experiment 4.3: Human vs Watermarked AI
   !python run_detectgpt_on_datasets.py \
       --human_csv data/processed/plain_human.csv \
       --ai_csv data/processed/watermarked_ai_100.csv \
-      --experiment_name human_vs_watermarked
+      --experiment_name human_vs_watermarked \
+      --n_samples 100 \
+      --n_perturbations 50 \
+      --base_model_name gpt2 \
+      --generator_model gpt2
 """
 
 import argparse
@@ -45,9 +44,7 @@ from sklearn.metrics import roc_auc_score, roc_curve
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 
-# ============================================================
-# MODEL LOADING
-# ============================================================
+# Model Loading
 
 def load_base_model(name, cache_dir):
     print(f"Loading base model {name}...")
@@ -74,9 +71,7 @@ def load_mask_model(name, cache_dir):
     return model, tokenizer
 
 
-# ============================================================
-# DETECTGPT CORE (extracted + cleaned from eric-mitchell/detect-gpt)
-# ============================================================
+# DetectGPT core from original repo
 
 def get_ll(text, model, tokenizer, max_length=512):
     """Log-likelihood of text under a causal LM."""
@@ -190,9 +185,7 @@ def detectgpt_score(text, base_model, base_tokenizer, mask_model,
     return d, z
 
 
-# ============================================================
-# DATA LOADING — reads YOUR build_datasets.py output
-# ============================================================
+# Data Loading
 
 def load_subset(csv_path, n_samples=None, min_words=30, generator_model=None):
     """Load a processed CSV from data/processed/."""
@@ -222,9 +215,7 @@ def load_subset(csv_path, n_samples=None, min_words=30, generator_model=None):
     return df["text"].tolist()
 
 
-# ============================================================
-# EVALUATION
-# ============================================================
+# Evaluation
 
 def compute_clf_metrics(labels, scores):
     auroc = roc_auc_score(labels, scores)
@@ -312,9 +303,7 @@ def run_experiment(human_texts, ai_texts, base_model, base_tokenizer,
     print(f"\nResults saved to {output_path}")
 
 
-# ============================================================
-# MAIN
-# ============================================================
+# Main
 
 def main():
     p = argparse.ArgumentParser(
@@ -358,9 +347,6 @@ def main():
         n_perturbations=args.n_perturbations,
         output_dir=output_dir,
     )
-
-    print("\nDone. Don't forget to copy results to Google Drive!")
-    print(f"  !cp -r {args.output_base}/ /content/drive/MyDrive/detectgpt_eval/")
 
 
 if __name__ == "__main__":
