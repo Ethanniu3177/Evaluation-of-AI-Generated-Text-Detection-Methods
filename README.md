@@ -1,19 +1,40 @@
 # Evaluation of AI-Generated Text Detection Methods
-CSCI 544 course project on evaluating the robustness of AI-generated text detection methods, such as DetectGPT and watermark-based detection models.
 
+CSCI 544 course project evaluating the robustness of AI-generated text detection methods, including DetectGPT and KGW watermark-based detection.
 
-# Setup
+---
 
-Install dependencies:
+## Environment Setup
+
+**Requirements:** Python 3.9+, pip
+
+Install all dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
+Key dependencies include `torch`, `transformers`, `datasets`, `markllm`, `pandas`, `scikit-learn`, `accelerate`, and `sentencepiece`.
 
-# Dataset Preparation
+---
 
-`build_datasets.py` is the dataset preparation pipeline. It downloads the RAID dataset, processes it into subsets, and generates watermarked text using the GPT-2 model.
+## System
+
+Experiments were run on **Google Colab** with a GPU runtime (NVIDIA T4 or equivalent). The code automatically selects CUDA if available, falling back to CPU:
+
+```python
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+```
+
+GPU is strongly recommended — DetectGPT with 50 perturbations per sample is computationally intensive. On CPU, runtimes will be significantly longer.
+
+---
+
+## Running the Code
+
+### Step 1 — Prepare Datasets
+
+`build_datasets.py` downloads the RAID dataset, builds text subsets, and generates watermarked text using GPT-2.
 
 Run all steps at once:
 
@@ -26,19 +47,19 @@ python build_datasets.py all \
 Or run each step individually:
 
 ```bash
-# Step 1: Download and cache the RAID dataset
+# Download and cache the RAID dataset
 python build_datasets.py download_raid
 
-# Step 2: Build plain_human, plain_ai, and paraphrased_ai subsets
+# Build plain_human, plain_ai, and paraphrased_ai subsets
 python build_datasets.py process_raid
 
-# Step 3: Generate watermarked text using GPT-2
+# Generate watermarked text using GPT-2
 python build_datasets.py watermark \
     --watermark-model gpt2 \
     --max-watermark-rows 100
 ```
 
-This produces the following files in `data/processed/`:
+Output files in `data/processed/`:
 
 | File | Description |
 |------|-------------|
@@ -47,16 +68,15 @@ This produces the following files in `data/processed/`:
 | `paraphrased_ai.csv` | AI-generated text after paraphrasing attack |
 | `watermarked_ai_100.csv` | AI-generated text with KGW watermark (GPT-2) |
 
-Each file uses a unified schema with fields: `id`, `text`, `label`, `variant`, `source_dataset`, `generator_model`, `attack_type`, `domain`, `group_id`, `split`, `metadata`.
+Each file uses a unified schema: `id`, `text`, `label`, `variant`, `source_dataset`, `generator_model`, `attack_type`, `domain`, `group_id`, `split`, `metadata`.
 
+---
 
-# Running Experiments
+### Step 2 — Run DetectGPT Experiments
 
-## DetectGPT
+`run_detectgpt_on_datasets.py` runs DetectGPT using GPT-2 as the base model and `t5-large` as the mask model.
 
-`run_detectgpt_on_datasets.py` runs DetectGPT using GPT-2 as the base model and `t5-large` as the mask model. Results are saved under `eval_results/<experiment_name>/results.json`.
-
-**Experiment 1 — Human vs. Plain AI:**
+**Baseline 1 — Human vs. Plain AI:**
 
 ```bash
 python run_detectgpt_on_datasets.py \
@@ -69,20 +89,7 @@ python run_detectgpt_on_datasets.py \
     --n_perturbations 50
 ```
 
-**Experiment 2 — Human vs. Paraphrased AI:**
-
-```bash
-python run_detectgpt_on_datasets.py \
-    --human_csv data/processed/plain_human.csv \
-    --ai_csv data/processed/paraphrased_ai.csv \
-    --experiment_name human_vs_paraphrased \
-    --base_model_name gpt2 \
-    --generator_model gpt2 \
-    --n_samples 100 \
-    --n_perturbations 50
-```
-
-**Experiment 3 — Human vs. Watermarked AI:**
+**Baseline 2 — Human vs. Watermarked AI:**
 
 ```bash
 python run_detectgpt_on_datasets.py \
@@ -95,21 +102,28 @@ python run_detectgpt_on_datasets.py \
     --n_perturbations 50
 ```
 
-## KGW Watermark Detection
-
-`evaluate_watermark.py` scores text using the KGW watermark detector (GPT-2, configured via `kgw_config.json`) and reports AUROC and FPR@95TPR. Results are saved to the path given by `--output`.
-
-**Experiment 1 — Human vs. Watermarked AI:**
+**Paraphrasing 1 — Human vs. Paraphrased AI:**
 
 ```bash
-python evaluate_watermark.py \
-    --dataset1 data/processed/plain_human.csv \
-    --dataset2 data/processed/watermarked_ai_100.csv \
+python run_detectgpt_on_datasets.py \
+    --human_csv data/processed/plain_human.csv \
+    --ai_csv data/processed/paraphrased_ai.csv \
+    --experiment_name human_vs_paraphrased \
+    --base_model_name gpt2 \
+    --generator_model gpt2 \
     --n_samples 100 \
-    --output eval_results/watermark_human_vs_watermarked.json
+    --n_perturbations 50
 ```
 
-**Experiment 2 — Plain AI vs. Watermarked AI:**
+Results are saved to `eval_results/<experiment_name>/results.json`.
+
+---
+
+### Step 3 — Run KGW Watermark Detection Experiments
+
+`evaluate_watermark.py` scores text using the KGW watermark detector (GPT-2, configured via `kgw_config.json`) and reports AUROC and FPR@95TPR.
+
+**Baseline 3 — Plain AI vs. Watermarked AI:**
 
 ```bash
 python evaluate_watermark.py \
@@ -119,7 +133,17 @@ python evaluate_watermark.py \
     --output eval_results/watermark_plain_ai_vs_watermarked.json
 ```
 
-**Experiment 3 — Human vs. Plain AI:**
+**Baseline 4 — Human vs. Watermarked AI:**
+
+```bash
+python evaluate_watermark.py \
+    --dataset1 data/processed/plain_human.csv \
+    --dataset2 data/processed/watermarked_ai_100.csv \
+    --n_samples 100 \
+    --output eval_results/watermark_human_vs_watermarked.json
+```
+
+**Baseline 5 — Human vs. Plain AI:**
 
 ```bash
 python evaluate_watermark.py \
@@ -128,3 +152,28 @@ python evaluate_watermark.py \
     --n_samples 100 \
     --output eval_results/watermark_human_vs_plain_ai.json
 ```
+
+---
+
+### Step 4 — Generate Plots
+
+`generate_plots.py` reads all experiment result files from `experiment_results/` and produces the following plots in `plots/`:
+
+- ROC curves
+- AUROC bar chart
+- Score distribution histograms
+- FPR@95TPR bar chart
+
+```bash
+python generate_plots.py
+```
+
+---
+
+## How Results Are Generated
+
+**DetectGPT** works by perturbing a text sample `n_perturbations` times using a mask-filling model (`t5-large`), then comparing the log-likelihood of the original text against its perturbations under a base language model (GPT-2). AI-generated text tends to occupy local maxima in the model's probability landscape, so a higher perturbation discrepancy score indicates AI authorship.
+
+**KGW Watermark Detection** scores text by checking whether output tokens fall in a statistically elevated "green list" partition, which is determined at generation time using a secret hash key. The detector computes a z-score against the null hypothesis of no watermark. Configuration is set in `kgw_config.json` (gamma=0.5, delta=2.0, z-threshold=4.0).
+
+Both detectors report **AUROC** (area under the ROC curve) and **FPR@95TPR** (false positive rate at 95% true positive rate) as evaluation metrics.
